@@ -20,6 +20,10 @@ class CCAnalyzer:
     @staticmethod
     def show(img):
         PIL.Image.fromarray(img).show()
+    
+    @staticmethod
+    def save(img, path):
+        PIL.Image.fromarray(img).save(path)
 
     @staticmethod
     def to_grayscale(img):
@@ -99,6 +103,7 @@ class CCAnalyzer:
             x, y, dx, dy, area = self.cc_stats[nb]
             if (tx <= x <= x + dx <= tx + tdx) and (ty <= y <= y + dy <= ty + tdy) and area > self.tile_area_floor:
                 new_img = cv2.rectangle(new_img, (x, y), (x + dx, y + dy), (0, 255, 0), 1)
+                CCAnalyzer.save(self.img[y:y+dy, x:x+dx], f'/home/steganopus/Documents/TAoS/misc/20240609/table_parser/data/split/{nb}.jpg')
         CCAnalyzer.show(new_img)
         breakpoint()
         print(123)
