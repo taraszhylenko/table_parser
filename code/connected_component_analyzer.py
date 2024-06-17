@@ -3,19 +3,26 @@ import PIL.Image
 
 import numpy  as np
 import pandas as pd
+import pytesseract as pyt
 
 class CCAnalyzer:
-    def __init__(self, image_file, tile_area_floor):
+    def __init__(self, image_file, tile_area_floor, output_dir):
         self.img            = np.array(PIL.Image.open(image_file))
         self.img_grayscale  = CCAnalyzer.to_grayscale(self.img)
         self.img_binary     = CCAnalyzer.to_binary(self.img_grayscale)
         self.img_binary_inv = 255 - self.img_binary
         self.tile_area_floor = tile_area_floor
+        self.output_dir     = output_dir
 
         self.set_cc_info()
         self.set_cc_neighbors()
         self.set_table_cc_idx()
         self.set_tiles_ccs_idx()
+        self.save_tiles()
+        # self.set_tiles_parses()
+        breakpoint()
+        print(123)
+        # self.parse_tiles()
 
     @staticmethod
     def show(img):
@@ -94,28 +101,64 @@ class CCAnalyzer:
     def set_table_cc_idx(self):
         self.cc_tableness = pd.DataFrame(self.cc_stats).assign(tableness = lambda df: df[2] * df[3] / df[4]).tableness
         self.cc_table_idx = self.cc_tableness.sort_values(ascending=False).index[0]
-    
+
     def set_tiles_ccs_idx(self):
         tx, ty, tdx, tdy, _ = self.cc_stats[self.cc_table_idx]
         table_neighbors = self.cc_neighbors[self.cc_table_idx]
         new_img = self.img.copy()
+        self.table_tiles = list()
         for nb in table_neighbors:
             x, y, dx, dy, area = self.cc_stats[nb]
             if (tx <= x <= x + dx <= tx + tdx) and (ty <= y <= y + dy <= ty + tdy) and area > self.tile_area_floor:
-                new_img = cv2.rectangle(new_img, (x, y), (x + dx, y + dy), (0, 255, 0), 1)
-                CCAnalyzer.save(self.img[y:y+dy, x:x+dx], f'/home/steganopus/Documents/TAoS/misc/20240609/table_parser/data/split/{nb}.jpg')
-        CCAnalyzer.show(new_img)
-        breakpoint()
-        print(123)
+                self.table_tiles.append(nb)
+                # new_img = cv2.rectangle(new_img, (x, y), (x + dx, y + dy), (0, 255, 0), 1)
+                # CCAnalyzer.save(self.img[y:y+dy, x:x+dx], f'/home/steganopus/Documents/TAoS/misc/20240609/table_parser/data/split/{nb}.jpg')
+        # CCAnalyzer.show(new_img)
+
+    def get_bb_img_by_idx(self, cc_idx):
+        x, y, dx, dy, area = self.cc_stats[cc_idx]
+        return PIL.Image.fromarray(self.img[y:y+dy, x:x+dx]) 
+
+    def save_tiles(self):
+        for idx, tile_idx in enumerate(self.table_tiles):
+            self.get_bb_img_by_idx(tile_idx).save(f"{self.output_dir}/{idx}.jpg")
+
+    @staticmethod
+    def best_parse(img):
+        best_conf  = None
+        best_angle = None
+        best_psm   = None
+        best_parse = None
+        for angle in [0, 90, 180, 270]:
+            for psm in [1,3,4,5,6,7,8,9,10,11,12,13]:
+                data  = pyt.image_to_data(img.rotate(angle, expand=True), config=f"--psm {psm}", output_type=pyt.Output.DATAFRAME)
+                conf  = np.nan_to_num(data.dropna()['conf'].mean())
+                parse = ''.join(data.text.dropna().astype(str).tolist())
+                print(conf, parse)
+                if best_conf is None:
+                    best_conf  = conf
+                    best_angle = angle
+                    best_psm   = psm
+                    best_parse = parse
+                else:
+                    if conf > best_conf:
+                        best_conf  = conf
+                        best_angle = angle
+                        best_psm   = psm
+                        best_parse = parse
+        return best_angle, best_psm, best_parse
+
+
 
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--image-file',      type=str, required=True)
+    parser.add_argument('--output-dir',      type=str, required=True)
     parser.add_argument('--tile-area-floor', type=str, required=True)
     args = parser.parse_args()
 
-    cca = CCAnalyzer(args.image_file, int(args.tile_area_floor))
+    cca = CCAnalyzer(args.image_file, int(args.tile_area_floor), args.output_dir)
     cca.show(cca.img)
     cca.show(cca.img_grayscale)
     cca.show(cca.img_binary)
